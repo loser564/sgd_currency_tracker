@@ -87,7 +87,7 @@ with st.expander("Explore any 30-day trend for the five pairs"):
     else:
         fig, ax = plt.subplots()
         ax.plot(hist.index, hist["Close"], marker="o", linestyle="-")
-        ax.tick_params(axis='x', labelsize=8)
+        ax.tick_params(axis='x', labelsize=5)
         ax.set_title(f"SGD → {pick} (Last 30 Days)")
         ax.set_xlabel("Date")
         ax.set_ylabel("Exchange Rate (per 1 SGD)", size=10)
@@ -108,7 +108,7 @@ for tab, (ccy, ticker) in zip(tabs, PAIRS.items()):
             fig, ax = plt.subplots()
             ax.plot(hist.index, hist["Close"], marker="o", linestyle="-")
             # edit x axis index size to smaller font
-            ax.tick_params(axis='x', labelsize=8)
+            ax.tick_params(axis='x', labelsize=5)
             ax.set_title(f"SGD → {ccy} (Last 30 Days)")
             ax.set_xlabel("Date")
             ax.set_ylabel("Exchange Rate (per 1 SGD)")
