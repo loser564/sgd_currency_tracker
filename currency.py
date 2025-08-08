@@ -128,11 +128,34 @@ for tab, (ccy, ticker) in zip(tabs, PAIRS.items()):
 # -----------------------------
 # Telegram Alerts
 # -----------------------------
+Sweet — here’s a drop-in replacement for your Telegram section that:
+
+uses the 2-month highs only as defaults in the inputs,
+
+treats the button as “Save settings” (no auto-loop, no polling),
+
+first time with a valid token/chat: sends a welcome message,
+
+on later submits: if thresholds changed, sends an ack with the new values; if nothing changed, sends a gentle “no changes” note.
+
+python
+Copy
+Edit
+# -----------------------------
+# Telegram Alerts (setup-only; no auto-loop)
+# -----------------------------
 st.header("📲 Telegram Alerts when SGD is strong")
-st.write("Set your thresholds and hit **Save & Send Update**. You'll get a Telegram message: either ✅ targets met, or ℹ️ a status with current values if no targets are hit.")
+st.write("Set your thresholds and click **Save**. On first setup I'll DM a welcome message. Later changes will send an acknowledgment with the new values.")
 
 # Precompute 2-month best for defaults only (users can override)
 best_2mo = {ccy: fetch_2mo_best(tkr) for ccy, tkr in PAIRS.items()}
+
+def fmt_thresholds(thr_dict: dict[str, float]) -> list[str]:
+    lines = []
+    for ccy in PAIRS.keys():  # keep consistent order
+        val = thr_dict.get(ccy)
+        lines.append(f"• SGD→{ccy}: {float(val):.4f}")
+    return lines
 
 with st.form("tg_form", clear_on_submit=False):
     st.markdown("**Telegram setup**")
@@ -149,76 +172,87 @@ with st.form("tg_form", clear_on_submit=False):
     )
 
     st.markdown("**Alert thresholds (per 1 SGD):**")
-    st.caption("Defaults are the **best (max) rate over the last 2 months** — you can override them below.")
+    st.caption("Defaults are the **best (max) rate over the last 2 months** — override as you like.")
 
     thr_cols = st.columns(5)
     thresholds = {}
     for i, ccy in enumerate(PAIRS.keys()):
         with thr_cols[i]:
-            default_val = best_2mo.get(ccy)
-            if default_val is None or default_val <= 0:
-                default_val = 0.0001
-            # use previously saved value if present
-            prior = st.session_state.get("thresholds", {}).get(ccy, round(default_val, 4))
+            default_val = best_2mo.get(ccy) or 0.0001
+            # prefer previously saved value if present
+            prior_val = st.session_state.get("thresholds", {}).get(ccy, round(default_val, 4))
             thresholds[ccy] = st.number_input(
                 f"{ccy} ≥",
                 min_value=0.0001,
-                value=float(prior),
+                value=float(prior_val),
                 step=0.0001,
                 format="%.4f",
-                help="You’ll be alerted when 1 SGD is at least this strong."
+                help="You'll be alerted when 1 SGD is at least this strong."
             )
 
-    submitted = st.form_submit_button("Save & Send Update")
+    submitted = st.form_submit_button("Save")
 
 if submitted:
+    # Basic guard so placeholders aren't used by accident
     bad_token = (not tg_token) or (tg_token.strip().lower() == "your token here")
     bad_chat  = (not tg_chat_id) or (tg_chat_id.strip().lower() == "your chat id here")
+
     if bad_token or bad_chat:
         st.error("Please provide both Telegram Bot Token and Chat ID.")
     else:
-        # persist in session for convenience
-        st.session_state["tg_token"] = tg_token
-        st.session_state["tg_chat_id"] = tg_chat_id
-        st.session_state["thresholds"] = thresholds
+        # Normalize thresholds to floats
+        thresholds = {k: float(v) for k, v in thresholds.items()}
 
-        # Always send a message: alerts if any target met, otherwise a status snapshot
-        hits = []
-        status_lines = []
+        # Determine whether this is the first signup (or token/chat changed)
+        first_signup = not st.session_state.get("registered", False) \
+                       or st.session_state.get("tg_token") != tg_token \
+                       or st.session_state.get("tg_chat_id") != tg_chat_id
 
-        for ccy, ticker in PAIRS.items():
-            last, _ = fetch_last_close(ticker)
-            tgt = thresholds.get(ccy)
-            if last is None:
-                status_lines.append(f"• SGD→{ccy}: — (no data)")
-                continue
+        # Detect changes vs previously saved thresholds
+        prev_thr = st.session_state.get("thresholds", {})
+        changed_pairs = []
+        for ccy in PAIRS.keys():
+            prev = float(prev_thr.get(ccy, float("nan")))
+            cur  = float(thresholds.get(ccy))
+            if not (abs(prev - cur) < 1e-9):  # treat any numeric change as update
+                changed_pairs.append(ccy)
+        changed = (len(prev_thr) > 0) and (len(changed_pairs) > 0)
 
-            met = (tgt is not None) and (last >= float(tgt))
-            if met:
-                hits.append((ccy, last, tgt))
-
-            status_lines.append(f"• SGD→{ccy}: {last:.4f} (target {float(tgt):.4f})")
-
-        if hits:
-            lines = ["✅ SGD alert — target(s) met"]
-            for ccy, last, tgt in hits:
-                lines.append(f"• SGD→{ccy}: {last:.4f} ≥ {float(tgt):.4f}")
-            lines.append("")
-            lines.append("Current snapshot:")
-            lines.extend(status_lines)
-            ok, err = send_telegram(tg_token, tg_chat_id, "\n".join(lines))
-            if ok:
-                st.success(f"Sent Telegram alert for {len(hits)} pair(s).")
-            else:
-                st.error(f"Telegram send failed: {err}")
+        # Build the message
+        if first_signup:
+            msg_lines = [
+                "👋 Welcome! You're now subscribed for SGD strength alerts.",
+                "I'll ping you when **1 SGD ≥ your target** for any selected currency.",
+                "",
+                "Your thresholds:",
+                *fmt_thresholds(thresholds),
+                "",
+                "You can come back anytime to change these values."
+            ]
+        elif changed:
+            # Acknowledge the change and list the new values (mark changed ones)
+            msg_lines = [
+                "✅ Settings updated. New thresholds:",
+            ]
+            for ccy in PAIRS.keys():
+                mark = " (changed)" if ccy in changed_pairs else ""
+                msg_lines.append(f"• SGD→{ccy}: {thresholds[ccy]:.4f}{mark}")
         else:
-            msg = ["ℹ️ Status — no targets hit", ""]
-            msg.extend(status_lines)
-            ok, err = send_telegram(tg_token, tg_chat_id, "\n".join(msg))
-            if ok:
-                st.info("No alerts fired. Sent a status update to Telegram.")
-            else:
-                st.error(f"Telegram send failed: {err}")
+            msg_lines = [
+                "ℹ️ No changes detected. Your thresholds remain:",
+                *fmt_thresholds(prev_thr if prev_thr else thresholds)
+            ]
+
+        ok, err = send_telegram(tg_token, tg_chat_id, "\n".join(msg_lines))
+        if ok:
+            st.success("Saved. I’ve sent a Telegram message.")
+            # Persist in session for future submits
+            st.session_state["registered"] = True
+            st.session_state["tg_token"] = tg_token
+            st.session_state["tg_chat_id"] = tg_chat_id
+            st.session_state["thresholds"] = thresholds
+        else:
+            st.error(f"Telegram send failed: {err}")
 # -----------------------------
 # Ad-hoc pair lookup
 # -----------------------------
