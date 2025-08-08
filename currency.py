@@ -128,22 +128,7 @@ for tab, (ccy, ticker) in zip(tabs, PAIRS.items()):
 # -----------------------------
 # Telegram Alerts
 # -----------------------------
-Sweet — here’s a drop-in replacement for your Telegram section that:
 
-uses the 2-month highs only as defaults in the inputs,
-
-treats the button as “Save settings” (no auto-loop, no polling),
-
-first time with a valid token/chat: sends a welcome message,
-
-on later submits: if thresholds changed, sends an ack with the new values; if nothing changed, sends a gentle “no changes” note.
-
-python
-Copy
-Edit
-# -----------------------------
-# Telegram Alerts (setup-only; no auto-loop)
-# -----------------------------
 st.header("📲 Telegram Alerts when SGD is strong")
 st.write("Set your thresholds and click **Save**. On first setup I'll DM a welcome message. Later changes will send an acknowledgment with the new values.")
 
