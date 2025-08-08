@@ -2,7 +2,7 @@ name: FX Alerts
 
 on:
   schedule:
-    - cron: "*/15 * * * *"   # every 15 minutes (min possible is 5m)
+    - cron:  '0 */4 * * *'  # every 4h
   workflow_dispatch:
 
 jobs:

@@ -124,28 +124,37 @@ for tab, (ccy, ticker) in zip(tabs, PAIRS.items()):
             ax.grid(True)
             st.pyplot(fig)
 
+            
 # -----------------------------
 # Telegram Alerts
 # -----------------------------
 st.header("📲 Telegram Alerts when SGD is strong")
-st.write("Get pinged when **1 SGD ≥ your target** in each currency.")
+st.write("Get pinged when **1 SGD ≥ your target** in each currency. If no targets are hit, you'll still get a status update with current values.")
 
-# NEW (2-month best) — precompute best thresholds
+# Precompute 2-month best for defaults only (users can override)
 best_2mo = {ccy: fetch_2mo_best(tkr) for ccy, tkr in PAIRS.items()}
 
 with st.form("tg_form", clear_on_submit=False):
     st.markdown("**Telegram setup**")
-    tg_token = st.text_input("Bot Token", value="Your Token here", type="password", help="Create a bot via @BotFather and paste its token here.")
-    tg_chat_id = st.text_input("Chat ID", value="Your chat id here", help="DM your bot first, then use @userinfobot or getUpdates to find it.")
+    tg_token = st.text_input(
+        "Bot Token",
+        value="Your Token here",
+        type="password",
+        help="Create a bot via @BotFather and paste its token here."
+    )
+    tg_chat_id = st.text_input(
+        "Chat ID",
+        value="Your chat id here",
+        help="DM your bot first, then use @userinfobot or getUpdates to find it."
+    )
 
     st.markdown("**Alert thresholds (per 1 SGD):**")
-    st.caption("Defaults are set to the **best (max) rate over the last 2 months** for each pair.")
+    st.caption("Defaults are the **best (max) rate over the last 2 months** — you can override them below.")
 
     thr_cols = st.columns(5)
     thresholds = {}
     for i, ccy in enumerate(PAIRS.keys()):
         with thr_cols[i]:
-            # Use exact max; if missing, fall back to a tiny positive placeholder
             default_val = best_2mo.get(ccy)
             if default_val is None or default_val <= 0:
                 default_val = 0.0001
@@ -158,33 +167,60 @@ with st.form("tg_form", clear_on_submit=False):
                 help="You’ll be alerted when 1 SGD is at least this strong."
             )
 
-    run_mode = st.radio("How to trigger alerts:", ["Just check now (manual)", "Auto-check every 5 minutes (page must stay open)"])
+    run_mode = st.radio(
+        "How to trigger alerts:",
+        ["Just check now (manual)", "Auto-check every 5 minutes (page must stay open)"]
+    )
     submitted = st.form_submit_button("Check / Start")
 
 if submitted:
-    if not tg_token or not tg_chat_id:
+    # Basic guard so placeholders aren't used by accident
+    bad_token = (not tg_token) or (tg_token.strip().lower() == "your token here")
+    bad_chat  = (not tg_chat_id) or (tg_chat_id.strip().lower() == "your chat id here")
+
+    if bad_token or bad_chat:
         st.error("Please provide both Telegram Bot Token and Chat ID.")
     else:
         def check_and_alert():
             hits = []
+            status_lines = []
+
+            # Build a snapshot once
             for ccy, ticker in PAIRS.items():
                 last, _ = fetch_last_close(ticker)
+                tgt = thresholds.get(ccy)
                 if last is None:
+                    status_lines.append(f"• SGD→{ccy}: — (no data)")
                     continue
-                target = thresholds.get(ccy)
-                if target and last >= target:
-                    hits.append((ccy, last, target))
+
+                # User-entered threshold overrides defaults
+                met = (tgt is not None) and (last >= float(tgt))
+                if met:
+                    hits.append((ccy, last, tgt))
+
+                status_lines.append(f"• SGD→{ccy}: {last:.4f} (target {float(tgt):.4f})")
+
+            # Send Telegram message: either alert(s) or status with "no targets hit"
             if hits:
-                lines = [f" SGD strength alert"]
-                for ccy, last, target in hits:
-                    lines.append(f"• SGD→{ccy}: {last:.4f} (target {target:.4f} met)")
+                lines = ["✅ SGD alert — target(s) met"]
+                for ccy, last, tgt in hits:
+                    lines.append(f"• SGD→{ccy}: {last:.4f} ≥ {float(tgt):.4f}")
+                lines.append("")  # extra line
+                lines.append("Current snapshot:")
+                lines.extend(status_lines)
                 ok, err = send_telegram(tg_token, tg_chat_id, "\n".join(lines))
                 if ok:
                     st.success(f"Sent Telegram alert for {len(hits)} pair(s).")
                 else:
                     st.error(f"Telegram send failed: {err}")
             else:
-                st.info("No alerts fired. SGD hasn’t reached your targets yet.")
+                msg = ["ℹ️ Status — no targets hit", ""]
+                msg.extend(status_lines)
+                ok, err = send_telegram(tg_token, tg_chat_id, "\n".join(msg))
+                if ok:
+                    st.info("No alerts fired. Sent a status update to Telegram.")
+                else:
+                    st.error(f"Telegram send failed: {err}")
 
         if run_mode.startswith("Just"):
             check_and_alert()
@@ -206,7 +242,6 @@ if submitted:
                 if stop:
                     st.info("Auto-check stopped.")
                     break
-
 # -----------------------------
 # Ad-hoc pair lookup
 # -----------------------------

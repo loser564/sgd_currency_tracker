@@ -1,8 +1,11 @@
 # notifier.py
-import os, sys, time
+import os
 import requests
 import yfinance as yf
-import numpy as np
+from datetime import datetime, timezone, timedelta
+
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID")
 
 PAIRS = {
     "JPY": "SGDJPY=X",
@@ -11,9 +14,6 @@ PAIRS = {
     "USD": "SGDUSD=X",
     "GBP": "SGDGBP=X",
 }
-
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID")
 
 def send_telegram(text: str):
     assert TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID, "Missing TELEGRAM_* env vars"
@@ -31,35 +31,56 @@ def last_close(ticker: str):
     prev = float(s.iloc[-2]) if len(s) > 1 else None
     return last, prev
 
-def best_2mo(ticker: str):
+def two_month_stats(ticker: str):
+    """Returns (prior_max_excl_today, all_time_max_2mo)."""
     df = yf.download(ticker, period="2mo", interval="1d", progress=False)
     s = df.get("Close")
     if s is None or s.dropna().empty:
-        return None
-    return float(s.dropna().max())
+        return None, None
+    s = s.dropna()
+    all_max = float(s.max())
+    prior_max = float(s.iloc[:-1].max()) if len(s) > 1 else all_max
+    return prior_max, all_max
 
 def main():
+    # Timestamp (SGT)
+    sg_tz = timezone(timedelta(hours=8))
+    now_sgt = datetime.now(timezone.utc).astimezone(sg_tz)
+    date_str = now_sgt.strftime("%Y-%m-%d %H:%M SGT")
+
     hits = []
-    lines = []
+    status_lines = []
+
     for ccy, tkr in PAIRS.items():
         last, prev = last_close(tkr)
-        best = best_2mo(tkr)
-        if last is None or best is None:
+        prior_max, all_max = two_month_stats(tkr)
+
+        if last is None:
+            status_lines.append(f"• SGD→{ccy}: — (no data)")
             continue
-        # Alert when we hit a NEW 2-month high (strictly greater than prior 2-mo max excluding "now")
-        # Using prior_max to reduce spam:
-        df = yf.download(tkr, period="2mo", interval="1d", progress=False).get("Close").dropna()
-        prior_max = float(df.iloc[:-1].max()) if len(df) > 1 else best
-        if last > prior_max:   # strictly new high
-            hits.append((ccy, last, best))
-            lines.append(f"• SGD→{ccy}: {last:.4f} (new 2-mo high)")
+
+        # New 2-month high if today's close (or latest) > prior 2-mo max (excluding today)
+        is_new_high = (prior_max is not None) and (last > prior_max)
+        if is_new_high:
+            hits.append((ccy, last))
+
+        best_str = f"{all_max:.4f}" if all_max is not None else "—"
+        status_lines.append(f"• SGD→{ccy}: {last:.4f}  (2-mo high: {best_str})")
 
     if hits:
-        msg = "✅ SGD strength alert\n" + "\n".join(lines)
-        send_telegram(msg)
-        print("Sent:", msg)
+        lines = [f"✅ SGD strength alert — new 2-month high(s) [{date_str}]"]
+        for ccy, last in hits:
+            lines.append(f"• SGD→{ccy}: {last:.4f} (new 2-mo high)")
+        # Include current snapshot for all pairs too (nice context)
+        lines.append("")
+        lines.append("Current snapshot:")
+        lines.extend(status_lines)
+        send_telegram("\n".join(lines))
     else:
-        print("No new highs.")
+        # Always send daily status even with no highs
+        msg = ["ℹ️ Daily SGD FX status — no new highs", f"{date_str}", ""]
+        msg.extend(status_lines)
+        send_telegram("\n".join(msg))
 
 if __name__ == "__main__":
     main()
