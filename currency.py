@@ -212,7 +212,7 @@ if submitted:
                 "Your thresholds:",
                 *fmt_thresholds(thresholds),
                 "",
-                "You can come back anytime to change these values."
+                "You can come back anytime to change these values at https://sgdcurrencytracker.streamlit.app."
             ]
         elif changed:
             # Acknowledge the change and list the new values (mark changed ones)
