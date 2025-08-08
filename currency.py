@@ -135,8 +135,8 @@ best_2mo = {ccy: fetch_2mo_best(tkr) for ccy, tkr in PAIRS.items()}
 
 with st.form("tg_form", clear_on_submit=False):
     st.markdown("**Telegram setup**")
-    tg_token = st.text_input("Bot Token", value="", type="password", help="Create a bot via @BotFather and paste its token here.")
-    tg_chat_id = st.text_input("Chat ID", value="", help="DM your bot first, then use @userinfobot or getUpdates to find it.")
+    tg_token = st.text_input("Bot Token", value="Your Token here", type="password", help="Create a bot via @BotFather and paste its token here.")
+    tg_chat_id = st.text_input("Chat ID", value="Your chat id here", help="DM your bot first, then use @userinfobot or getUpdates to find it.")
 
     st.markdown("**Alert thresholds (per 1 SGD):**")
     st.caption("Defaults are set to the **best (max) rate over the last 2 months** for each pair.")
@@ -175,7 +175,7 @@ if submitted:
                 if target and last >= target:
                     hits.append((ccy, last, target))
             if hits:
-                lines = [f"✅ SGD strength alert"]
+                lines = [f" SGD strength alert"]
                 for ccy, last, target in hits:
                     lines.append(f"• SGD→{ccy}: {last:.4f} (target {target:.4f} met)")
                 ok, err = send_telegram(tg_token, tg_chat_id, "\n".join(lines))
