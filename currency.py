@@ -92,7 +92,8 @@ with st.expander("Explore any 60-day trend for the five pairs"):
     if hist.empty:
         st.error("No data available.")
     else:
-        fig, ax = plt.subplots()
+        # make graph smaller
+        fig, ax = plt.subplots(figsize=(8, 4))
         ax.plot(hist.index, hist["Close"], marker="o", linestyle="-")
         ax.tick_params(axis='x', labelsize=5)
         ax.set_title(f"SGD → {pick} (Last 60 Days)")
@@ -112,7 +113,8 @@ for tab, (ccy, ticker) in zip(tabs, PAIRS.items()):
         if hist.empty:
             st.error(f"No data for SGD{ccy}.")
         else:
-            fig, ax = plt.subplots()
+            
+            fig, ax = plt.subplots(figsize=(8, 4))
             ax.plot(hist.index, hist["Close"], marker="o", linestyle="-")
             # edit x axis index size to smaller font
             ax.tick_params(axis='x', labelsize=5)
