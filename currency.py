@@ -37,6 +37,13 @@ def fetch_30d_history(ticker: str):
     df = yf.download(ticker, period="1mo", interval="1d", progress=False)
     return df
 
+@st.cache_data(ttl=300)
+def fetch_2m_history(ticker: str):
+    df = yf.download(ticker, period="2mo", interval="1d", progress=False)
+    if df.empty or "Close" not in df:
+        return None
+    return df
+
 # NEW (2-month best)
 @st.cache_data(ttl=300)
 def fetch_2mo_best(ticker: str):
@@ -78,17 +85,17 @@ st.caption("Note: Higher numbers are better for SGD (you get more foreign curren
 # -----------------------------
 # Per-pair explorer (optional)
 # -----------------------------
-with st.expander("Explore any 30-day trend for the five pairs"):
+with st.expander("Explore any 60-day trend for the five pairs"):
     pick = st.selectbox("Pick a pair", list(PAIRS.keys()))
     tkr = PAIRS[pick]
-    hist = fetch_30d_history(tkr)
+    hist = fetch_2m_history(tkr)
     if hist.empty:
         st.error("No data available.")
     else:
         fig, ax = plt.subplots()
         ax.plot(hist.index, hist["Close"], marker="o", linestyle="-")
         ax.tick_params(axis='x', labelsize=5)
-        ax.set_title(f"SGD → {pick} (Last 30 Days)")
+        ax.set_title(f"SGD → {pick} (Last 60 Days)")
         ax.set_xlabel("Date")
         ax.set_ylabel("Exchange Rate (per 1 SGD)", size=10)
         ax.grid(True)
