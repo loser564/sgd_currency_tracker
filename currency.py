@@ -147,7 +147,6 @@ with st.form("tg_form", clear_on_submit=False):
     tg_token = st.text_input(
         "Bot Token",
         value=st.session_state.get("tg_token", "Your Token here"),
-        type="password",
         help="Create a bot via @BotFather and paste its token here."
     )
     tg_chat_id = st.text_input(
