@@ -3,7 +3,7 @@
 
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://sgdcurrencytracker.streamlit.app)
 
- **Inspiration:** This project was inspired by the approach in [SatyamSharma007/currency-tracker-challenge](https://github.com/SatyamSharma007/currency-tracker-challenge/blob/main/currency_tracker.py). 
+ **Inspiration:** This project was inspired by the approach in [SatyamSharma007/currency-tracker-challenge] and of course his amazing frontend ui was a godsend.(https://github.com/SatyamSharma007/currency-tracker-challenge/blob/main/currency_tracker.py). 
 
 
 Track how strong the Singapore Dollar (SGD) is against major currencies and get **Telegram alerts** when 1 SGD buys as much (or more) than the **best rate in the last 2 months**.
