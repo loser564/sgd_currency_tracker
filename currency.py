@@ -18,6 +18,9 @@ PAIRS = {
     "AUD": "SGDAUD=X",
     "USD": "SGDUSD=X",
     "GBP": "SGDGBP=X",
+    "THB": "SGDTHB=X",
+    "MYR": "SGDMYR=X",
+    "CNY": "SGDCNY=X"
 }
 
 @st.cache_data(ttl=300)
@@ -242,7 +245,7 @@ if submitted:
 # -----------------------------
 st.divider()
 st.subheader("Ad-hoc pair lookup (any to any)")
-currencies = ["USD", "EUR", "INR", "GBP", "JPY", "AUD", "CAD", "CNY", "SGD"]
+currencies = list(PAIRS.keys())
 base_currency = st.selectbox("Base:", currencies, index=currencies.index("SGD"))
 target_currency = st.selectbox("Target:", currencies, index=currencies.index("USD"))
 ticker = f"{base_currency}{target_currency}=X"
