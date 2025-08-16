@@ -41,6 +41,10 @@ def fetch_30d_history(ticker: str):
     df = yf.download(ticker, period="1mo", interval="1d", progress=False)
     return df
 
+@st.cache_data(ttl=300)
+def fetch_60d_history(ticker: str):
+    df = yf.download(ticker, period="2mo", interval="5d", progress=False)
+    return df
 # NEW (2-month best)
 @st.cache_data(ttl=300)
 def fetch_2mo_best(ticker: str):
@@ -82,16 +86,16 @@ st.caption("Note: Higher numbers are better for SGD (you get more foreign curren
 # -----------------------------
 # Per-pair explorer (optional)
 # -----------------------------
-with st.expander("Explore any 30-day trend for the five pairs"):
+with st.expander("Explore any 60-day trend for the five pairs"):
     pick = st.selectbox("Pick a pair", list(PAIRS.keys()))
     tkr = PAIRS[pick]
-    hist = fetch_30d_history(tkr)
+    hist = fetch_60d_history(tkr)
     if hist.empty:
         st.error("No data available.")
     else:
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(10, 5))
         ax.plot(hist.index, hist["Close"], marker="o", linestyle="-")
-        ax.set_title(f"SGD → {pick} (Last 30 Days)", fontsize=12)
+        ax.set_title(f"SGD → {pick} (Last 60 Days)", fontsize=12)
         ax.set_xlabel("Date", fontsize=10)
         ax.set_ylabel("Exchange Rate (per 1 SGD)", fontsize=10)
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d"))
@@ -110,7 +114,8 @@ for tab, (ccy, ticker) in zip(tabs, PAIRS.items()):
         if hist.empty:
             st.error(f"No data for SGD{ccy}.")
         else:
-            fig, ax = plt.subplots()
+            # make 30 day plot smaller
+            fig, ax = plt.subplots(figsize=(10, 5))
             ax.plot(hist.index, hist["Close"], marker="o", linestyle="-")
             ax.set_title(f"SGD → {ccy} (Last 30 Days)", fontsize=12)
             ax.set_xlabel("Date", fontsize=10)
@@ -232,7 +237,7 @@ with col2:
             if history.empty:
                 st.error("No data available for the selected currency pair.")
             else:
-                fig, ax = plt.subplots()
+                fig, ax = plt.subplots(figsize=(10, 5))
                 ax.plot(history.index, history["Close"], marker="o", linestyle="-")
                 ax.set_title(f"{base_currency} to {target_currency} (Last 30 Days)")
                 ax.set_xlabel("Date", fontsize=10)
