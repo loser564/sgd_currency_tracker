@@ -89,10 +89,11 @@ with st.expander("Explore any 30-day trend for the five pairs"):
         st.error("No data available.")
     else:
         fig, ax = plt.subplots()
-        ax.plot(hist.index, hist["Close"], marker="o", linestyle="-", fontsize=10)
+        ax.plot(hist.index, hist["Close"], marker="o", linestyle="-")
         ax.set_title(f"SGD → {pick} (Last 30 Days)", fontsize=12)
         ax.set_xlabel("Date", fontsize=10)
         ax.set_ylabel("Exchange Rate (per 1 SGD)", fontsize=10)
+        ax.tick_params(axis='both', labelsize=8)
         ax.grid(True)
         st.pyplot(fig)
 
@@ -108,10 +109,11 @@ for tab, (ccy, ticker) in zip(tabs, PAIRS.items()):
             st.error(f"No data for SGD{ccy}.")
         else:
             fig, ax = plt.subplots()
-            ax.plot(hist.index, hist["Close"], marker="o", linestyle="-", fontsize=10)
+            ax.plot(hist.index, hist["Close"], marker="o", linestyle="-")
             ax.set_title(f"SGD → {ccy} (Last 30 Days)", fontsize=12)
             ax.set_xlabel("Date", fontsize=10)
             ax.set_ylabel("Exchange Rate (per 1 SGD)", fontsize=10)
+            ax.tick_params(axis='both', labelsize=8)
             ax.grid(True)
             st.pyplot(fig)
 
