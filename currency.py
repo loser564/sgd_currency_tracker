@@ -40,13 +40,6 @@ def fetch_30d_history(ticker: str):
     df = yf.download(ticker, period="1mo", interval="1d", progress=False)
     return df
 
-@st.cache_data(ttl=300)
-def fetch_2m_history(ticker: str):
-    df = yf.download(ticker, period="2mo", interval="1d", progress=False)
-    if df.empty or "Close" not in df:
-        return None
-    return df
-
 # NEW (2-month best)
 @st.cache_data(ttl=300)
 def fetch_2mo_best(ticker: str):
@@ -88,20 +81,18 @@ st.caption("Note: Higher numbers are better for SGD (you get more foreign curren
 # -----------------------------
 # Per-pair explorer (optional)
 # -----------------------------
-with st.expander("Explore any 60-day trend for the five pairs"):
+with st.expander("Explore any 30-day trend for the five pairs"):
     pick = st.selectbox("Pick a pair", list(PAIRS.keys()))
     tkr = PAIRS[pick]
-    hist = fetch_2m_history(tkr)
+    hist = fetch_30d_history(tkr)
     if hist.empty:
         st.error("No data available.")
     else:
-        # make graph smaller
-        fig, ax = plt.subplots(figsize=(8, 4))
+        fig, ax = plt.subplots()
         ax.plot(hist.index, hist["Close"], marker="o", linestyle="-")
-        ax.tick_params(axis='x', labelsize=5)
-        ax.set_title(f"SGD → {pick} (Last 60 Days)")
+        ax.set_title(f"SGD → {pick} (Last 30 Days)")
         ax.set_xlabel("Date")
-        ax.set_ylabel("Exchange Rate (per 1 SGD)", size=10)
+        ax.set_ylabel("Exchange Rate (per 1 SGD)")
         ax.grid(True)
         st.pyplot(fig)
 
@@ -116,136 +107,103 @@ for tab, (ccy, ticker) in zip(tabs, PAIRS.items()):
         if hist.empty:
             st.error(f"No data for SGD{ccy}.")
         else:
-            
-            fig, ax = plt.subplots(figsize=(8, 4))
+            fig, ax = plt.subplots()
             ax.plot(hist.index, hist["Close"], marker="o", linestyle="-")
-            # edit x axis index size to smaller font
-            ax.tick_params(axis='x', labelsize=5)
             ax.set_title(f"SGD → {ccy} (Last 30 Days)")
             ax.set_xlabel("Date")
             ax.set_ylabel("Exchange Rate (per 1 SGD)")
             ax.grid(True)
             st.pyplot(fig)
 
-
 # -----------------------------
 # Telegram Alerts
 # -----------------------------
-
 st.header("📲 Telegram Alerts when SGD is strong")
-st.write("Set your thresholds and click **Save**. On first setup I'll DM a welcome message. Later changes will send an acknowledgment with the new values.")
+st.write("Get pinged when **1 SGD ≥ your target** in each currency.")
 
-# Precompute 2-month best for defaults only (users can override)
+# NEW (2-month best) — precompute best thresholds
 best_2mo = {ccy: fetch_2mo_best(tkr) for ccy, tkr in PAIRS.items()}
-
-def fmt_thresholds(thr_dict: dict[str, float]) -> list[str]:
-    lines = []
-    for ccy in PAIRS.keys():  # keep consistent order
-        val = thr_dict.get(ccy)
-        lines.append(f"• SGD→{ccy}: {float(val):.4f}")
-    return lines
 
 with st.form("tg_form", clear_on_submit=False):
     st.markdown("**Telegram setup**")
-    tg_token = st.text_input(
-        "Bot Token",
-        value=st.session_state.get("tg_token", "Your Token here"),
-        help="Create a bot via @BotFather and paste its token here."
-    )
-    tg_chat_id = st.text_input(
-        "Chat ID",
-        value=st.session_state.get("tg_chat_id", "Your chat id here"),
-        help="DM your bot first, then use @userinfobot or getUpdates to find it."
-    )
+    tg_token = st.text_input("Bot Token", value=os.getenv("TELEGRAM_BOT_TOKEN", ""), type="password", help="Create a bot via @BotFather and paste its token here.")
+    tg_chat_id = st.text_input("Chat ID", value=os.getenv("TELEGRAM_CHAT_ID", ""), help="DM your bot first, then use @userinfobot or getUpdates to find it.")
 
     st.markdown("**Alert thresholds (per 1 SGD):**")
-    st.caption("Defaults are the **best (max) rate over the last 2 months** — override as you like.")
+    st.caption("Defaults are set to the **best (max) rate over the last 2 months** for each pair.")
 
-    thr_cols = st.columns(5)
+    thr_cols = st.columns(len(PAIRS))
     thresholds = {}
-    for i, ccy in enumerate(PAIRS.keys()):
-        with thr_cols[i]:
-            default_val = best_2mo.get(ccy) or 0.0001
-            # prefer previously saved value if present
-            prior_val = st.session_state.get("thresholds", {}).get(ccy, round(default_val, 4))
-            thresholds[ccy] = st.number_input(
-                f"{ccy} ≥",
-                min_value=0.0001,
-                value=float(prior_val),
-                step=0.0001,
-                format="%.4f",
-                help="You'll be alerted when 1 SGD is at least this strong."
-            )
+    for row_start in range(0, len(PAIRS), len(PAIRS.keys()) // 4):
+        row_cols = st.columns(4)
+        for i, ccy in enumerate(PAIRS.keys()[row_start:row_start+4]):
+            with row_cols[i]:
+                default_val = best_2mo.get(ccy) or 0.0001
+                thresholds[ccy] = st.number_input(
+                    f"{ccy} ≥",
+                    min_value=0.0001,
+                    value=round(default_val, 4),
+                    step=0.0001,
+                    format="%.4f"
+                )
 
-    submitted = st.form_submit_button("Save")
+    run_mode = st.radio("How to trigger alerts:", ["Just check now (manual)", "Auto-check every 5 minutes (page must stay open)"])
+    submitted = st.form_submit_button("Check / Start")
 
 if submitted:
-    # Basic guard so placeholders aren't used by accident
-    bad_token = (not tg_token) or (tg_token.strip().lower() == "your token here")
-    bad_chat  = (not tg_chat_id) or (tg_chat_id.strip().lower() == "your chat id here")
-
-    if bad_token or bad_chat:
+    if not tg_token or not tg_chat_id:
         st.error("Please provide both Telegram Bot Token and Chat ID.")
     else:
-        # Normalize thresholds to floats
-        thresholds = {k: float(v) for k, v in thresholds.items()}
+        def check_and_alert():
+            hits = []
+            for ccy, ticker in PAIRS.items():
+                last, _ = fetch_last_close(ticker)
+                if last is None:
+                    continue
+                target = thresholds.get(ccy)
+                if target and last >= target:
+                    hits.append((ccy, last, target))
+            if hits:
+                lines = [f" SGD strength alert"]
+                for ccy, last, target in hits:
+                    lines.append(f"• SGD→{ccy}: {last:.4f} (target {target:.4f} met)")
+                ok, err = send_telegram(tg_token, tg_chat_id, "\n".join(lines))
+                if ok:
+                    st.success(f"Sent Telegram alert for {len(hits)} pair(s).")
+                else:
+                    st.error(f"Telegram send failed: {err}")
+            else:
+                st.info("No alerts fired. SGD hasn’t reached your targets yet.")
 
-        # Determine whether this is the first signup (or token/chat changed)
-        first_signup = not st.session_state.get("registered", False) \
-                       or st.session_state.get("tg_token") != tg_token \
-                       or st.session_state.get("tg_chat_id") != tg_chat_id
-
-        # Detect changes vs previously saved thresholds
-        prev_thr = st.session_state.get("thresholds", {})
-        changed_pairs = []
-        for ccy in PAIRS.keys():
-            prev = float(prev_thr.get(ccy, float("nan")))
-            cur  = float(thresholds.get(ccy))
-            if not (abs(prev - cur) < 1e-9):  # treat any numeric change as update
-                changed_pairs.append(ccy)
-        changed = (len(prev_thr) > 0) and (len(changed_pairs) > 0)
-
-        # Build the message
-        if first_signup:
-            msg_lines = [
-                "👋 Welcome! You're now subscribed for SGD strength alerts.",
-                "I'll ping you when **1 SGD ≥ your target** for any selected currency.",
-                "",
-                "Your thresholds:",
-                *fmt_thresholds(thresholds),
-                "",
-                "You can come back anytime to change these values at https://sgdcurrencytracker.streamlit.app."
-            ]
-        elif changed:
-            # Acknowledge the change and list the new values (mark changed ones)
-            msg_lines = [
-                "✅ Settings updated. New thresholds:",
-            ]
-            for ccy in PAIRS.keys():
-                mark = " (changed)" if ccy in changed_pairs else ""
-                msg_lines.append(f"• SGD→{ccy}: {thresholds[ccy]:.4f}{mark}")
+        if run_mode.startswith("Just"):
+            check_and_alert()
         else:
-            msg_lines = [
-                "ℹ️ No changes detected. Your thresholds remain:",
-                *fmt_thresholds(prev_thr if prev_thr else thresholds)
-            ]
+            placeholder = st.empty()
+            stop = st.button("Stop auto-check")
+            while True:
+                if stop:
+                    st.info("Auto-check stopped.")
+                    break
+                with placeholder.container():
+                    st.write("⏱ Checking now…")
+                    check_and_alert()
+                    st.write("Sleeping 5 minutes...")
+                for _ in range(300):
+                    time.sleep(1)
+                    if stop:
+                        break
+                if stop:
+                    st.info("Auto-check stopped.")
+                    break
 
-        ok, err = send_telegram(tg_token, tg_chat_id, "\n".join(msg_lines))
-        if ok:
-            st.success("Saved. I’ve sent a Telegram message.")
-            # Persist in session for future submits
-            st.session_state["registered"] = True
-            st.session_state["tg_token"] = tg_token
-            st.session_state["tg_chat_id"] = tg_chat_id
-            st.session_state["thresholds"] = thresholds
-        else:
-            st.error(f"Telegram send failed: {err}")
 # -----------------------------
 # Ad-hoc pair lookup
 # -----------------------------
 st.divider()
 st.subheader("Ad-hoc pair lookup (any to any)")
-currencies = list(PAIRS.keys())
+# currencies = ["USD", "EUR", "MYR", "GBP", "JPY", "AUD", "CAD", "CNY", "SGD", "THB"]
+# extract currencies from pairs
+currencies = ["SGD"] + list(PAIRS.keys())
 base_currency = st.selectbox("Base:", currencies, index=currencies.index("SGD"))
 target_currency = st.selectbox("Target:", currencies, index=currencies.index("USD"))
 ticker = f"{base_currency}{target_currency}=X"
