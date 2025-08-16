@@ -133,10 +133,11 @@ with st.form("tg_form", clear_on_submit=False):
     st.caption("Defaults are set to the **best (max) rate over the last 2 months** for each pair.")
 
     thr_cols = st.columns(len(PAIRS))
+    currencies = list(PAIRS.keys())
     thresholds = {}
-    for row_start in range(0, len(PAIRS), len(PAIRS.keys()) // 4):
+    for row_start in range(0, len(currencies), 4):
         row_cols = st.columns(4)
-        for i, ccy in enumerate(PAIRS.keys()[row_start:row_start+4]):
+        for i, ccy in enumerate(currencies[row_start:row_start+4]):
             with row_cols[i]:
                 default_val = best_2mo.get(ccy) or 0.0001
                 thresholds[ccy] = st.number_input(
@@ -144,7 +145,8 @@ with st.form("tg_form", clear_on_submit=False):
                     min_value=0.0001,
                     value=round(default_val, 4),
                     step=0.0001,
-                    format="%.4f"
+                    format="%.4f",
+                    help="You’ll be alerted when 1 SGD is at least this strong."
                 )
 
     run_mode = st.radio("How to trigger alerts:", ["Just check now (manual)", "Auto-check every 5 minutes (page must stay open)"])
