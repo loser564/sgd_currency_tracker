@@ -5,6 +5,7 @@ import streamlit as st
 import yfinance as yf
 import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.dates as mdates
 
 st.set_page_config(page_title=" SGD FX Tracker", layout="wide")
 st.title(" Currency Value Tracker (SGD as base)")
@@ -93,7 +94,8 @@ with st.expander("Explore any 30-day trend for the five pairs"):
         ax.set_title(f"SGD → {pick} (Last 30 Days)", fontsize=12)
         ax.set_xlabel("Date", fontsize=10)
         ax.set_ylabel("Exchange Rate (per 1 SGD)", fontsize=10)
-        ax.tick_params(axis='both', labelsize=8)
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d"))
+        plt.setp(ax.get_xticklabels(), fontsize=8)
         ax.grid(True)
         st.pyplot(fig)
 
@@ -113,7 +115,8 @@ for tab, (ccy, ticker) in zip(tabs, PAIRS.items()):
             ax.set_title(f"SGD → {ccy} (Last 30 Days)", fontsize=12)
             ax.set_xlabel("Date", fontsize=10)
             ax.set_ylabel("Exchange Rate (per 1 SGD)", fontsize=10)
-            ax.tick_params(axis='both', labelsize=8)
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d"))
+            plt.setp(ax.get_xticklabels(), fontsize=8)
             ax.grid(True)
             st.pyplot(fig)
 
@@ -234,6 +237,8 @@ with col2:
                 ax.set_title(f"{base_currency} to {target_currency} (Last 30 Days)")
                 ax.set_xlabel("Date", fontsize=10)
                 ax.set_ylabel("Exchange Rate (per 1 SGD)", fontsize=10)
+                ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d"))
+                plt.setp(ax.get_xticklabels(), fontsize=8)
                 ax.grid(True)
                 st.pyplot(fig)
         except Exception as e:
