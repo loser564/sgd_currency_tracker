@@ -131,8 +131,8 @@ best_2mo = {ccy: fetch_2mo_best(tkr) for ccy, tkr in PAIRS.items()}
 
 with st.form("tg_form", clear_on_submit=False):
     st.markdown("**Telegram setup**")
-    tg_token = st.text_input("Bot Token", value=os.getenv("TELEGRAM_BOT_TOKEN", ""), type="password", help="Create a bot via @BotFather and paste its token here.")
-    tg_chat_id = st.text_input("Chat ID", value=os.getenv("TELEGRAM_CHAT_ID", ""), help="DM your bot first, then use @userinfobot or getUpdates to find it.")
+    tg_token = st.text_input("Bot Token", value="", help="Create a bot via @BotFather and paste its token here.")
+    tg_chat_id = st.text_input("Chat ID", value="", help="DM your bot first, then use @userinfobot or getUpdates to find it.")
 
     st.markdown("**Alert thresholds (per 1 SGD):**")
     st.caption("Defaults are set to the **best (max) rate over the last 2 months** for each pair.")
