@@ -91,8 +91,8 @@ with st.expander("Explore any 30-day trend for the five pairs"):
         fig, ax = plt.subplots()
         ax.plot(hist.index, hist["Close"], marker="o", linestyle="-")
         ax.set_title(f"SGD → {pick} (Last 30 Days)")
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Exchange Rate (per 1 SGD)")
+        ax.set_xlabel("Date", fontsize=10)
+        ax.set_ylabel("Exchange Rate (per 1 SGD)", fontsize=10)
         ax.grid(True)
         st.pyplot(fig)
 
@@ -110,8 +110,8 @@ for tab, (ccy, ticker) in zip(tabs, PAIRS.items()):
             fig, ax = plt.subplots()
             ax.plot(hist.index, hist["Close"], marker="o", linestyle="-")
             ax.set_title(f"SGD → {ccy} (Last 30 Days)")
-            ax.set_xlabel("Date")
-            ax.set_ylabel("Exchange Rate (per 1 SGD)")
+            ax.set_xlabel("Date", fontsize=10)
+            ax.set_ylabel("Exchange Rate (per 1 SGD)", fontsize=10)
             ax.grid(True)
             st.pyplot(fig)
 
@@ -230,8 +230,8 @@ with col2:
                 fig, ax = plt.subplots()
                 ax.plot(history.index, history["Close"], marker="o", linestyle="-")
                 ax.set_title(f"{base_currency} to {target_currency} (Last 30 Days)")
-                ax.set_xlabel("Date")
-                ax.set_ylabel("Exchange Rate")
+                ax.set_xlabel("Date", fontsize=10)
+                ax.set_ylabel("Exchange Rate (per 1 SGD)", fontsize=10)
                 ax.grid(True)
                 st.pyplot(fig)
         except Exception as e:
