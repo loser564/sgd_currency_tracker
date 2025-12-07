@@ -48,6 +48,7 @@ Track how strong the Singapore Dollar (SGD) is against major currencies and get 
 └─ .github/
 └─ workflows/
 └─ fx-alerts.yml        # GitHub Actions scheduler (optional)
+└─ keep-alive.yml        # Commit some dummy commit once a month to keep action alive
 
 ```
 
