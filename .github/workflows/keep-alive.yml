@@ -1,0 +1,24 @@
+name: Keep Repo Alive
+
+on:
+  schedule:
+    - cron: "0 0 1 * *"   # once a month
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Touch keep-alive file
+        run: |
+          date > .github/keep-alive.txt
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add .github/keep-alive.txt
+          git commit -m "keep alive" || echo "No changes"
+          git push
