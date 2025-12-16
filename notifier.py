@@ -16,6 +16,7 @@ PAIRS = {
     "THB": "SGDTHB=X",
     "MYR": "SGDMYR=X",
     "CNY": "SGDCNY=X"
+    "TWD": "SGDTWD=X"
 }
 
 def send_telegram(text: str):
