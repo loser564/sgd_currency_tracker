@@ -15,7 +15,7 @@ PAIRS = {
     "GBP": "SGDGBP=X",
     "THB": "SGDTHB=X",
     "MYR": "SGDMYR=X",
-    "CNY": "SGDCNY=X"
+    "CNY": "SGDCNY=X",
     "TWD": "SGDTWD=X"
 }
 
