@@ -51,7 +51,7 @@ def two_month_stats(ticker: str):
     s = df.get("Close")
     if s is None or s.dropna().empty:
         return None, None
-    s = s.dropna()
+    s = s.dropna().squeeze()  # Convert DataFrame to Series
     all_max = float(s.max())
     prior_max = float(s.iloc[:-1].max()) if len(s) > 1 else all_max
     return prior_max, all_max
