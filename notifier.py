@@ -27,10 +27,19 @@ def send_telegram(text: str):
 
 def last_close(ticker: str):
     df = yf.download(ticker, period="5d", interval="1d", progress=False)
-    s = df.get("Close")
-    if s is None or s.dropna().empty:
+    if df.empty or 'Close' not in df.columns:
         return None, None
+    
+    # Handle both regular and MultiIndex columns
+    if isinstance(df.columns, pd.MultiIndex):
+        s = df['Close'].iloc[:, 0]  # Get first column under 'Close'
+    else:
+        s = df['Close']
+    
     s = s.dropna()
+    if s.empty:
+        return None, None
+        
     last = float(s.iloc[-1])
     prev = float(s.iloc[-2]) if len(s) > 1 else None
     return last, prev
