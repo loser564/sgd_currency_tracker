@@ -34,11 +34,7 @@ def ensure_trades_sheet(sp):
     return ws
 
 TRADES = [
-    {"date": "2025-07-26 00:00:00", "from": "SGD", "to": "JPY", "amount": 80, "rate": 115.4, "converted": 9232.0, "notes": "backfill"},
-    {"date": "2025-08-20 00:00:00", "from": "SGD", "to": "AUD", "amount": 350, "rate": 1.203, "converted": 421.05, "notes": "backfill"},
-    {"date": "2025-12-12 00:00:00", "from": "SGD", "to": "JPY", "amount": 100, "rate": 120.7, "converted": 12070.0, "notes": "backfill"},
-    {"date": "2026-06-02 00:00:00", "from": "SGD", "to": "USD", "amount": 119, "rate": 0.7820, "converted": 93.06, "notes": "backfill"},
-    {"date": "2026-08-10 00:00:00", "from": "SGD", "to": "USD", "amount": 120, "rate": 0.7815, "converted": 93.78, "notes": "backfill"},
+## fill in your trades here
 ]
 
 def get_historical_rate(from_ccy, to_ccy, date_str):

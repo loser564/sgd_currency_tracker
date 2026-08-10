@@ -104,14 +104,24 @@ def log_trade(from_ccy, to_ccy, amount, rate, notes=""):
     return converted, market_rate, spread_pct
 
 
+def _close_series(df):
+    s = df.get("Close")
+    if s is None:
+        return None
+    if hasattr(s, "columns"):
+        s = s.iloc[:, 0]
+    s = s.dropna()
+    return s if not s.empty else None
+
+
 def get_market_rate(from_ccy, to_ccy):
     ticker = f"{from_ccy}{to_ccy}=X"
     try:
         df = yf.download(ticker, period="5d", interval="1d", progress=False)
-        s = df.get("Close")
-        if s is None or s.dropna().empty:
+        s = _close_series(df)
+        if s is None:
             return None
-        return float(s.dropna().iloc[-1])
+        return float(s.iloc[-1])
     except Exception:
         return None
 
@@ -314,10 +324,9 @@ async def recommend_job(context: ContextTypes.DEFAULT_TYPE):
 
 def last_close(ticker):
     df = yf.download(ticker, period="5d", interval="1d", progress=False)
-    s = df.get("Close")
-    if s is None or s.dropna().empty:
+    s = _close_series(df)
+    if s is None:
         return None, None
-    s = s.dropna()
     last = float(s.iloc[-1])
     prev = float(s.iloc[-2]) if len(s) > 1 else None
     return last, prev
@@ -325,10 +334,9 @@ def last_close(ticker):
 
 def two_month_stats(ticker):
     df = yf.download(ticker, period="2mo", interval="1d", progress=False)
-    s = df.get("Close")
-    if s is None or s.dropna().empty:
+    s = _close_series(df)
+    if s is None:
         return None, None
-    s = s.dropna()
     all_max = float(s.max())
     prior_max = float(s.iloc[:-1].max()) if len(s) > 1 else all_max
     return prior_max, all_max
