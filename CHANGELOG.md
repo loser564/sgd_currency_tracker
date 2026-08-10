@@ -1,21 +1,41 @@
 # Changelog
 
+## v2.1.0 — Buy/Sell Recommendations (2026-08-10)
+
+### Added
+- `/checkrates` — shows rates in both directions (SGD → FX with 2-month high %, and FX → SGD)
+
+### Changed
+- `/recommend` is now the core scheduled job (every 4h), with clear **BUY** and **SELL** labels
+  - **SELL**: convert foreign currency back to SGD when profitable, with per-trade P&L breakdown
+  - **BUY**: buy foreign currency when SGD rate is near its 2-month high
+- Streamlit dashboard cleaned up — removed legacy Telegram alert form, auto-check polling loop, and unused helpers
+
+### Removed
+- `/rates` — replaced by `/checkrates`
+- `/alert` and `fx_alert_job` — replaced by `/recommend` scheduled job
+- 8-hour FX alert scheduled job — single 4-hour recommend job handles everything
+- `send_telegram()`, `fetch_2mo_best()`, auto-check polling loop from Streamlit
+- `time` and `requests` imports from `currency.py`
+
+---
+
 ## v2.0.0 — Mini Forex Engine (2026-08-10)
 
 ### Added
 - **Telegram bot** (`bot.py`) — long-running bot hosted on Railway, replacing GitHub Actions cron
   - `/exchange` — log trades with flexible input parsing (supports `120 SGD to USD at 0.7815`, `120SGD USD 0.7815`, `->`, `@`, etc.)
-  - `/rate`, `/rates` — check current market rates
+  - `/rate` — check current market rate for any pair
+  - `/checkrates` — SGD → FX and FX → SGD rates
   - `/portfolio` — holdings summary with live SGD valuations
   - `/history` — last 10 trades from Google Sheets
-  - `/recommend` — trade recommendations (reverse profit-taking + forward buy signals near 2-month highs)
+  - `/recommend` — buy/sell recommendations (every 4h automatic + on demand)
   - `/addpair`, `/removepair`, `/pairs` — manage tracked currency pairs
-  - `/alert` — on-demand FX alert check
 - **Google Sheets integration** — all trades logged with date, amount, rate, converted amount, market rate, and spread %
-- **Scheduled jobs** — FX alerts every 8h, trade recommendations every 4h (proactive Telegram notifications)
+- **Scheduled job** — trade recommendations every 4h (proactive buy/sell Telegram notifications)
 - **Portfolio & P&L tracking** on the Streamlit dashboard
 - **Trade history table** on the Streamlit dashboard
-- **Trade recommendations UI** with two tabs: convert back (take profit) and buy more (near 2-month high)
+- **Trade recommendations UI** with two tabs: sell (take profit) and buy (near 2-month high)
 - **Dockerfile** and `.dockerignore` for Railway deployment
 - `pairs.json` — single source of truth for tracked pairs (editable via bot or file)
 - `backfill.py` — script to import historical trades with market rate lookup
@@ -31,9 +51,8 @@
 - Google service account credentials stored as base64-encoded env var (no file mount needed)
 
 ### Removed
-- `notifier.py` — replaced by `bot.py` scheduled jobs
-- `.github/workflows/fx-alerts.yml` — replaced by bot's built-in 8h alert job
+- `notifier.py` — replaced by `bot.py`
+- `.github/workflows/fx-alerts.yml` — replaced by bot's scheduled recommend job
 - `.github/workflows/keep-alive.yml` — no longer needed without GitHub Actions
 - Telegram alert form in Streamlit (bot token/chat ID input, threshold form, auto-check polling loop)
 - `send_telegram()` from `currency.py` — bot handles all Telegram messaging
-- `fetch_2mo_best()` — only used by the removed alert form

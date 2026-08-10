@@ -276,15 +276,15 @@ def get_recommendations():
 
     if reverse_recs:
         lines.append("")
-        lines.append("*🔄 Convert back (take profit):*")
+        lines.append("*💰 SELL — convert back to SGD (take profit):*")
         for rec in reverse_recs:
             num = len(rec["trades"])
             lines.append(
-                f"\n🟢 *{rec['to']} → {rec['from']}*\n"
+                f"\n🟢 *Sell {rec['to']} → {rec['from']}*\n"
                 f"  Holding: {rec['holding']:,.2f} {rec['to']} | "
                 f"Reverse rate now: {rec['reverse_rate']:.4f}\n"
                 f"  Convert back: {rec['convert_back']:,.2f} {rec['from']}\n"
-                f"  *Total profit: {rec['profit']:,.2f} {rec['from']} ({rec['profit_pct']:+.2f}%)*\n"
+                f"  *Profit: {rec['profit']:,.2f} {rec['from']} ({rec['profit_pct']:+.2f}%)*\n"
                 f"\n  Original trade{'s' if num > 1 else ''}:"
             )
             for t in rec["trades"]:
@@ -297,13 +297,13 @@ def get_recommendations():
 
     if forward_recs:
         lines.append("")
-        lines.append("*📈 Buy more (rate improved):*")
+        lines.append("*🛒 BUY — SGD is near 2-month high:*")
         for rec in forward_recs:
             lines.append(
-                f"\n🟢 *{rec['from']} → {rec['to']}*\n"
+                f"\n🟢 *Buy {rec['to']}* (SGD → {rec['to']})\n"
                 f"  Current: {rec['current_rate']:.4f} | 2-mo high: {rec['two_mo_high']:.4f}\n"
                 f"  Your avg rate: {rec['avg_rate']:.4f}\n"
-                f"  *Rate is at {rec['pct_of_high']:.1f}% of 2-month high* — good time to buy"
+                f"  *Rate at {rec['pct_of_high']:.1f}% of 2-month high* — good time to buy"
             )
 
     return "\n".join(lines)
@@ -320,7 +320,7 @@ async def recommend_job(context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Recommend job failed: {e}")
 
 
-# --------------- FX alerts (migrated from notifier.py) ---------------
+# --------------- Rate checking ---------------
 
 def last_close(ticker):
     df = yf.download(ticker, period="5d", interval="1d", progress=False)
@@ -342,40 +342,34 @@ def two_month_stats(ticker):
     return prior_max, all_max
 
 
-async def fx_alert_job(context: ContextTypes.DEFAULT_TYPE):
+def get_checkrates_sgd_to_fx():
     now_sgt = datetime.now(timezone.utc).astimezone(SG_TZ)
     date_str = now_sgt.strftime("%Y-%m-%d %H:%M SGT")
-
-    hits = []
-    status_lines = []
-
+    lines = [f"📈 *SGD → Foreign Currency* [{date_str}]", ""]
     for ccy, tkr in PAIRS.items():
         last, prev = last_close(tkr)
-        prior_max, all_max = two_month_stats(tkr)
-
+        _, all_max = two_month_stats(tkr)
         if last is None:
-            status_lines.append(f"• SGD→{ccy}: — (no data)")
+            lines.append(f"• SGD→{ccy}: — (no data)")
             continue
+        delta = f" ({last - prev:+.4f})" if prev else ""
+        high_str = f" | 2-mo high: {all_max:.4f}" if all_max else ""
+        pct = f" ({last / all_max * 100:.1f}%)" if all_max else ""
+        lines.append(f"• SGD→{ccy}: {last:.4f}{delta}{high_str}{pct}")
+    return "\n".join(lines)
 
-        is_new_high = (prior_max is not None) and (last > prior_max)
-        if is_new_high:
-            hits.append((ccy, last))
 
-        best_str = f"{all_max:.4f}" if all_max is not None else "—"
-        status_lines.append(f"• SGD→{ccy}: {last:.4f}  (2-mo high: {best_str})")
-
-    if hits:
-        lines = [f"✅ SGD strength alert — new 2-month high(s) [{date_str}]"]
-        for ccy, last in hits:
-            lines.append(f"• SGD→{ccy}: {last:.4f} (new 2-mo high)")
-        lines.append("")
-        lines.append("Current snapshot:")
-        lines.extend(status_lines)
-    else:
-        lines = ["ℹ️ Daily SGD FX status — no new highs", date_str, ""]
-        lines.extend(status_lines)
-
-    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="\n".join(lines))
+def get_checkrates_fx_to_sgd():
+    now_sgt = datetime.now(timezone.utc).astimezone(SG_TZ)
+    date_str = now_sgt.strftime("%Y-%m-%d %H:%M SGT")
+    lines = [f"📉 *Foreign Currency → SGD* [{date_str}]", ""]
+    for ccy in PAIRS:
+        rate = get_market_rate(ccy, "SGD")
+        if rate is None:
+            lines.append(f"• {ccy}→SGD: — (no data)")
+            continue
+        lines.append(f"• 1 {ccy} = {rate:.4f} SGD")
+    return "\n".join(lines)
 
 
 # --------------- Bot commands ---------------
@@ -387,11 +381,10 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/exchange <amount> <from> <to> <rate> [notes]\n"
         "  e.g. /exchange 120 SGD USD 0.7815\n"
         "/rate <from> <to> — get current market rate\n"
-        "/rates — all SGD rates\n"
+        "/checkrates — SGD → FX and FX → SGD rates\n"
         "/portfolio — your holdings summary\n"
         "/history — last 10 trades\n"
-        "/alert — trigger FX alert check now\n"
-        "/recommend — check profitable reverse trades\n"
+        "/recommend — buy/sell recommendations\n"
         "/addpair <CCY> — add a new currency (e.g. /addpair KRW)\n"
         "/removepair <CCY> — remove a tracked currency\n"
         "/pairs — list all tracked pairs"
@@ -505,16 +498,12 @@ async def cmd_rate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Could not fetch rate for {from_ccy}/{to_ccy}")
 
 
-async def cmd_rates(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    lines = ["📈 *Current SGD rates*", ""]
-    for ccy, tkr in PAIRS.items():
-        last, prev = last_close(tkr)
-        if last is None:
-            lines.append(f"• SGD→{ccy}: — (no data)")
-        else:
-            delta = f" ({last - prev:+.4f})" if prev else ""
-            lines.append(f"• SGD→{ccy}: {last:.4f}{delta}")
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+async def cmd_checkrates(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🔍 Fetching rates...")
+    msg_sgd = get_checkrates_sgd_to_fx()
+    msg_fx = get_checkrates_fx_to_sgd()
+    await update.message.reply_text(msg_sgd, parse_mode="Markdown")
+    await update.message.reply_text(msg_fx, parse_mode="Markdown")
 
 
 async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -533,18 +522,13 @@ async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("No trades recorded yet.")
 
 
-async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🔍 Checking rates...")
-    await fx_alert_job(context)
-
-
 async def cmd_recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔍 Analysing your trades...")
     msg = get_recommendations()
     if msg:
         await update.message.reply_text(msg, parse_mode="Markdown")
     else:
-        await update.message.reply_text("No profitable reverse trades found right now.")
+        await update.message.reply_text("No buy/sell recommendations right now.")
 
 
 async def cmd_addpair(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -592,17 +576,15 @@ def main():
     app.add_handler(CommandHandler("help", cmd_start))
     app.add_handler(CommandHandler("exchange", cmd_exchange))
     app.add_handler(CommandHandler("rate", cmd_rate))
-    app.add_handler(CommandHandler("rates", cmd_rates))
+    app.add_handler(CommandHandler("checkrates", cmd_checkrates))
     app.add_handler(CommandHandler("portfolio", cmd_portfolio))
     app.add_handler(CommandHandler("history", cmd_history))
-    app.add_handler(CommandHandler("alert", cmd_alert))
     app.add_handler(CommandHandler("recommend", cmd_recommend))
     app.add_handler(CommandHandler("addpair", cmd_addpair))
     app.add_handler(CommandHandler("removepair", cmd_removepair))
     app.add_handler(CommandHandler("pairs", cmd_pairs))
 
     job_queue = app.job_queue
-    job_queue.run_repeating(fx_alert_job, interval=8 * 3600, first=10)
     job_queue.run_repeating(recommend_job, interval=4 * 3600, first=60)
 
     logger.info("Bot started — polling for messages")
