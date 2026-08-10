@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.2.0 — Holdings Sheet & P&L Tracking (2026-08-10)
+
+### Added
+- **Holdings sheet** (Currency | Amount | Avg SGD Cost) — user-maintained source of truth for what you currently hold, referenced by `/recommend` and `/portfolio`
+- `/holdings` — view current holdings with unrealized P&L per currency
+- `/sethold <CCY> <AMOUNT> [avg_cost]` — add or update a holding from Telegram
+- `/removehold <CCY>` — remove a holding
+- Unrealized P&L (amount, % and total) now shown in both `/portfolio` and `/holdings`
+- Cost-basis fallback: if a holding has no `avg_cost` set, it's derived from the average `SGD→X` rate across your logged trades (flagged as "est. from Trades")
+
+### Changed
+- `/recommend`'s SELL logic now reads net holdings from the Holdings sheet instead of summing raw `(from, to)` trade pairs — fixes incorrect recommendations on multi-hop trades (e.g. SGD→AUD→EUR previously double-counted the original AUD amount as still held)
+- `/portfolio` rewritten to use the same Holdings-based P&L logic as `/holdings`, replacing its old Trades-only summary
+- `_avg_buy_rate()` helper shared between `/recommend` and `/portfolio` (deduplicated)
+
+---
+
 ## v2.1.0 — Buy/Sell Recommendations (2026-08-10)
 
 ### Added

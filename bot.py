@@ -84,6 +84,63 @@ def ensure_trades_sheet(spreadsheet):
     return ws
 
 
+def ensure_holdings_sheet(spreadsheet):
+    try:
+        ws = spreadsheet.worksheet("Holdings")
+    except gspread.exceptions.WorksheetNotFound:
+        ws = spreadsheet.add_worksheet(title="Holdings", rows=100, cols=3)
+        ws.append_row(["Currency", "Amount", "Avg SGD Cost (optional)"])
+    return ws
+
+
+def get_holdings():
+    """Reads the user-maintained Holdings sheet: Currency | Amount | Avg SGD Cost (optional)."""
+    sp = get_gsheet()
+    ws = ensure_holdings_sheet(sp)
+    rows = ws.get_all_records()
+    holdings = {}
+    for r in rows:
+        ccy = str(r.get("Currency", "")).upper().strip()
+        amount = r.get("Amount", 0)
+        cost = r.get("Avg SGD Cost (optional)", "")
+        try:
+            amount = float(amount or 0)
+        except (TypeError, ValueError):
+            amount = 0
+        try:
+            cost = float(cost) if cost not in ("", None) else None
+        except (TypeError, ValueError):
+            cost = None
+        if ccy and amount > 0:
+            holdings[ccy] = {"amount": amount, "avg_cost": cost}
+    return holdings
+
+
+def set_holding(ccy, amount, avg_cost=None):
+    """Create or update a row in the Holdings sheet for the given currency."""
+    ccy = ccy.upper()
+    sp = get_gsheet()
+    ws = ensure_holdings_sheet(sp)
+    cell = ws.find(ccy, in_column=1)
+    cost_val = avg_cost if avg_cost is not None else ""
+    if cell:
+        ws.update_cell(cell.row, 2, amount)
+        ws.update_cell(cell.row, 3, cost_val)
+    else:
+        ws.append_row([ccy, amount, cost_val])
+
+
+def remove_holding(ccy):
+    ccy = ccy.upper()
+    sp = get_gsheet()
+    ws = ensure_holdings_sheet(sp)
+    cell = ws.find(ccy, in_column=1)
+    if cell:
+        ws.delete_rows(cell.row)
+        return True
+    return False
+
+
 def log_trade(from_ccy, to_ccy, amount, rate, notes=""):
     sp = get_gsheet()
     ws = ensure_trades_sheet(sp)
@@ -128,34 +185,97 @@ def get_market_rate(from_ccy, to_ccy):
 
 # --------------- Portfolio / P&L ---------------
 
-def get_portfolio_summary():
+def _avg_buy_rate(rows, to_ccy):
+    """Average SGD->to_ccy rate from the Trades sheet, used as a cost-basis
+    fallback when the Holdings sheet doesn't specify one."""
+    total_converted = 0.0
+    total_spent = 0.0
+    for r in rows:
+        if r.get("From", "") != "SGD" or r.get("To", "") != to_ccy:
+            continue
+        amount = float(r.get("Amount", 0) or 0)
+        converted = float(r.get("Converted", 0) or 0)
+        if converted > 0:
+            total_converted += converted
+            total_spent += amount
+    if total_converted <= 0:
+        return None
+    return total_spent / total_converted  # SGD cost per unit of to_ccy
+
+
+def get_holdings_with_pnl():
+    """Combines the Holdings sheet with live rates and cost basis to compute
+    unrealized P&L per currency (used by /portfolio and /holdings)."""
+    holdings = get_holdings()
+    if not holdings:
+        return []
+
     sp = get_gsheet()
-    ws = ensure_trades_sheet(sp)
-    rows = ws.get_all_records()
-    if not rows:
+    trades_ws = ensure_trades_sheet(sp)
+    rows = trades_ws.get_all_records()
+
+    results = []
+    for ccy, h in sorted(holdings.items()):
+        amount = h["amount"]
+        avg_cost_rate = h["avg_cost"]
+        cost_is_estimated = avg_cost_rate is None
+        if avg_cost_rate is None:
+            avg_cost_rate = _avg_buy_rate(rows, ccy)
+
+        current_rate = get_market_rate("SGD", ccy)  # SGD -> ccy, for display
+        current_value_sgd = None
+        cost_sgd = None
+        pnl = None
+        pnl_pct = None
+
+        reverse_rate = get_market_rate(ccy, "SGD")
+        if reverse_rate is not None:
+            current_value_sgd = amount * reverse_rate
+            if avg_cost_rate:
+                cost_sgd = amount * avg_cost_rate
+                pnl = current_value_sgd - cost_sgd
+                pnl_pct = pnl / cost_sgd * 100 if cost_sgd else None
+
+        results.append({
+            "ccy": ccy,
+            "amount": amount,
+            "avg_cost_rate": avg_cost_rate,
+            "cost_is_estimated": cost_is_estimated,
+            "current_value_sgd": current_value_sgd,
+            "cost_sgd": cost_sgd,
+            "pnl": pnl,
+            "pnl_pct": pnl_pct,
+        })
+    return results
+
+
+def get_portfolio_summary():
+    holdings = get_holdings_with_pnl()
+    if not holdings:
         return None
 
-    holdings = {}
-    total_sgd_spent = 0.0
-    for r in rows:
-        to_ccy = r.get("To", "")
-        converted = float(r.get("Converted", 0) or 0)
-        amount = float(r.get("Amount", 0) or 0)
-        from_ccy = r.get("From", "")
-        if from_ccy == "SGD":
-            total_sgd_spent += amount
-        holdings[to_ccy] = holdings.get(to_ccy, 0.0) + converted
-
     lines = ["📊 *Portfolio Summary*", ""]
-    for ccy, amt in sorted(holdings.items()):
-        current_rate = get_market_rate("SGD", ccy)
-        if current_rate:
-            current_sgd_value = amt / current_rate
-            lines.append(f"• {ccy}: {amt:,.2f} (≈ {current_sgd_value:,.2f} SGD)")
+    total_value = 0.0
+    total_cost = 0.0
+    for h in holdings:
+        if h["current_value_sgd"] is not None:
+            total_value += h["current_value_sgd"]
+            value_str = f"≈ {h['current_value_sgd']:,.2f} SGD"
         else:
-            lines.append(f"• {ccy}: {amt:,.2f}")
+            value_str = "rate unavailable"
 
-    lines.append(f"\nTotal SGD exchanged: {total_sgd_spent:,.2f}")
+        pnl_str = ""
+        if h["pnl"] is not None:
+            total_cost += h["cost_sgd"]
+            pnl_str = f" | P&L: {h['pnl']:+,.2f} SGD ({h['pnl_pct']:+.2f}%)"
+
+        lines.append(f"• {h['ccy']}: {h['amount']:,.2f} ({value_str}){pnl_str}")
+
+    lines.append(f"\nTotal current value: {total_value:,.2f} SGD")
+    if total_cost > 0:
+        total_pnl = total_value - total_cost
+        total_pnl_pct = total_pnl / total_cost * 100
+        lines.append(f"Total unrealized P&L: {total_pnl:+,.2f} SGD ({total_pnl_pct:+.2f}%)")
     return "\n".join(lines)
 
 
@@ -180,91 +300,83 @@ def get_trade_history(limit=10):
 
 def get_recommendations():
     sp = get_gsheet()
-    ws = ensure_trades_sheet(sp)
-    rows = ws.get_all_records()
-    if not rows:
+    trades_ws = ensure_trades_sheet(sp)
+    rows = trades_ws.get_all_records()
+
+    holdings = get_holdings()
+    if not holdings and not rows:
         return None
 
-    positions = {}
+    # --- SELL side: based on what you say you currently hold ---
+    reverse_recs = []
+    for ccy, h in holdings.items():
+        total_holding = h["amount"]
+        avg_cost_rate = h["avg_cost"]
+        if avg_cost_rate is None:
+            avg_cost_rate = _avg_buy_rate(rows, ccy)
+        if avg_cost_rate is None or avg_cost_rate <= 0:
+            continue
+        total_cost = total_holding * avg_cost_rate
+
+        current_reverse_rate = get_market_rate(ccy, "SGD")
+        if current_reverse_rate is None:
+            continue
+
+        convert_back = total_holding * current_reverse_rate
+        profit = convert_back - total_cost
+        profit_pct = profit / total_cost * 100
+        if profit <= 0:
+            continue
+
+        reverse_recs.append({
+            "to": ccy,
+            "from": "SGD",
+            "holding": total_holding,
+            "original_spent": total_cost,
+            "avg_cost_rate": avg_cost_rate,
+            "reverse_rate": current_reverse_rate,
+            "convert_back": convert_back,
+            "profit": profit,
+            "profit_pct": profit_pct,
+        })
+
+    # --- BUY side: unrelated to current holdings — average historical SGD->X buy rate ---
+    buy_positions = {}
     for r in rows:
         from_ccy = r.get("From", "")
         to_ccy = r.get("To", "")
+        if from_ccy != "SGD":
+            continue
         amount = float(r.get("Amount", 0) or 0)
         converted = float(r.get("Converted", 0) or 0)
         rate = float(r.get("Rate", 0) or 0)
-        if not from_ccy or not to_ccy or rate == 0:
+        if rate == 0:
             continue
+        buy_positions.setdefault(to_ccy, []).append({"amount": amount, "converted": converted})
 
-        key = (from_ccy, to_ccy)
-        if key not in positions:
-            positions[key] = []
-        positions[key].append({
-            "date": r.get("Date", ""),
-            "amount": amount,
-            "converted": converted,
-            "rate": rate,
-        })
-
-    reverse_recs = []
     forward_recs = []
-
-    for (from_ccy, to_ccy), trades in positions.items():
+    for to_ccy, trades in buy_positions.items():
         total_converted = sum(t["converted"] for t in trades)
         total_original = sum(t["amount"] for t in trades)
         avg_rate = total_converted / total_original if total_original else 0
 
-        current_forward_rate = get_market_rate(from_ccy, to_ccy)
-        current_reverse_rate = get_market_rate(to_ccy, from_ccy)
+        current_forward_rate = get_market_rate("SGD", to_ccy)
+        if current_forward_rate is None:
+            continue
 
-        # --- Reverse: convert holdings back to original currency ---
-        if current_reverse_rate is not None and total_original > 0:
-            convert_back = total_converted * current_reverse_rate
-            profit = convert_back - total_original
-            profit_pct = profit / total_original * 100
-            if profit > 0:
-                trade_details = []
-                for t in trades:
-                    t_back = t["converted"] * current_reverse_rate
-                    t_profit = t_back - t["amount"]
-                    date_short = t["date"][:10] if t["date"] else "?"
-                    trade_details.append({
-                        "date": date_short,
-                        "amount": t["amount"],
-                        "converted": t["converted"],
-                        "rate": t["rate"],
-                        "convert_back": t_back,
-                        "profit": t_profit,
-                    })
-                reverse_recs.append({
-                    "from": from_ccy,
-                    "to": to_ccy,
-                    "holding": total_converted,
-                    "original_spent": total_original,
-                    "avg_rate": avg_rate,
-                    "current_rate": current_forward_rate or 0,
-                    "reverse_rate": current_reverse_rate,
-                    "convert_back": convert_back,
-                    "profit": profit,
-                    "profit_pct": profit_pct,
-                    "trades": trade_details,
-                })
+        _, two_mo_high = two_month_stats(PAIRS.get(to_ccy, f"SGD{to_ccy}=X"))
+        if two_mo_high is None:
+            continue
 
-        # --- Forward: recommend buying when rate is near 2-month high ---
-        if from_ccy == "SGD" and current_forward_rate is not None:
-            _, two_mo_high = two_month_stats(PAIRS.get(to_ccy, f"SGD{to_ccy}=X"))
-            if two_mo_high is not None:
-                pct_of_high = current_forward_rate / two_mo_high * 100
-                if pct_of_high >= 98:
-                    forward_recs.append({
-                        "direction": "forward",
-                        "from": from_ccy,
-                        "to": to_ccy,
-                        "avg_rate": avg_rate,
-                        "current_rate": current_forward_rate,
-                        "two_mo_high": two_mo_high,
-                        "pct_of_high": pct_of_high,
-                        "num_trades": len(trades),
-                    })
+        pct_of_high = current_forward_rate / two_mo_high * 100
+        if pct_of_high >= 98:
+            forward_recs.append({
+                "to": to_ccy,
+                "avg_rate": avg_rate,
+                "current_rate": current_forward_rate,
+                "two_mo_high": two_mo_high,
+                "pct_of_high": pct_of_high,
+            })
 
     if not reverse_recs and not forward_recs:
         return None
@@ -278,22 +390,14 @@ def get_recommendations():
         lines.append("")
         lines.append("*💰 SELL — convert back to SGD (take profit):*")
         for rec in reverse_recs:
-            num = len(rec["trades"])
             lines.append(
                 f"\n🟢 *Sell {rec['to']} → {rec['from']}*\n"
-                f"  Holding: {rec['holding']:,.2f} {rec['to']} | "
-                f"Reverse rate now: {rec['reverse_rate']:.4f}\n"
+                f"  Holding: {rec['holding']:,.2f} {rec['to']} "
+                f"(avg cost: {rec['avg_cost_rate']:.4f})\n"
+                f"  Reverse rate now: {rec['reverse_rate']:.4f}\n"
                 f"  Convert back: {rec['convert_back']:,.2f} {rec['from']}\n"
-                f"  *Profit: {rec['profit']:,.2f} {rec['from']} ({rec['profit_pct']:+.2f}%)*\n"
-                f"\n  Original trade{'s' if num > 1 else ''}:"
+                f"  *Profit: {rec['profit']:,.2f} {rec['from']} ({rec['profit_pct']:+.2f}%)*"
             )
-            for t in rec["trades"]:
-                lines.append(
-                    f"  ▸ {t['date']}: {t['amount']:,.2f} {rec['from']} → "
-                    f"{t['converted']:,.2f} {rec['to']} @ {t['rate']:.4f} "
-                    f"→ now worth {t['convert_back']:,.2f} {rec['from']} "
-                    f"({t['profit']:+,.2f})"
-                )
 
     if forward_recs:
         lines.append("")
@@ -382,7 +486,10 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "  e.g. /exchange 120 SGD USD 0.7815\n"
         "/rate <from> <to> — get current market rate\n"
         "/checkrates — SGD → FX and FX → SGD rates\n"
-        "/portfolio — your holdings summary\n"
+        "/portfolio — your holdings summary with P&L\n"
+        "/holdings — view holdings with P&L\n"
+        "/sethold <CCY> <AMOUNT> [avg_cost] — set/update a holding\n"
+        "/removehold <CCY> — remove a holding\n"
         "/history — last 10 trades\n"
         "/recommend — buy/sell recommendations\n"
         "/addpair <CCY> — add a new currency (e.g. /addpair KRW)\n"
@@ -531,6 +638,66 @@ async def cmd_recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("No buy/sell recommendations right now.")
 
 
+async def cmd_holdings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    holdings = get_holdings_with_pnl()
+    if not holdings:
+        await update.message.reply_text(
+            "No holdings set. Use /sethold <CCY> <AMOUNT> [avg_cost] to add one, "
+            "or fill in the *Holdings* sheet directly (Currency | Amount | Avg SGD Cost).",
+            parse_mode="Markdown",
+        )
+        return
+    lines = ["💼 *Your Holdings*", ""]
+    for h in holdings:
+        cost_note = " (est. from Trades)" if h["cost_is_estimated"] and h["avg_cost_rate"] else ""
+        cost_str = f" @ avg {h['avg_cost_rate']:.4f}{cost_note}" if h["avg_cost_rate"] else " (no cost basis)"
+        pnl_str = f" | P&L: {h['pnl']:+,.2f} SGD ({h['pnl_pct']:+.2f}%)" if h["pnl"] is not None else ""
+        lines.append(f"• {h['ccy']}: {h['amount']:,.2f}{cost_str}{pnl_str}")
+    lines.append("")
+    lines.append("Use /sethold <CCY> <AMOUNT> [avg_cost] to update, /removehold <CCY> to remove.")
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+async def cmd_sethold(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if not args or len(args) < 2:
+        await update.message.reply_text(
+            "Usage: /sethold <CCY> <AMOUNT> [avg_cost]\n"
+            "Example: /sethold USD 93.78\n"
+            "Example: /sethold USD 93.78 1.2792"
+        )
+        return
+    ccy = args[0].upper()
+    try:
+        amount = float(args[1])
+        avg_cost = float(args[2]) if len(args) > 2 else None
+    except ValueError:
+        await update.message.reply_text("Amount and avg_cost must be numbers.")
+        return
+
+    try:
+        set_holding(ccy, amount, avg_cost)
+    except Exception as e:
+        logger.error(f"Failed to set holding: {e}")
+        await update.message.reply_text(f"❌ Failed to update holding: {e}")
+        return
+
+    cost_str = f" @ avg cost {avg_cost:.4f}" if avg_cost else ""
+    await update.message.reply_text(f"✅ Holdings updated: {ccy} = {amount:,.2f}{cost_str}")
+
+
+async def cmd_removehold(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if not args:
+        await update.message.reply_text("Usage: /removehold <CCY>\nExample: /removehold JPY")
+        return
+    ccy = args[0].upper()
+    if remove_holding(ccy):
+        await update.message.reply_text(f"✅ Removed {ccy} from holdings.")
+    else:
+        await update.message.reply_text(f"{ccy} is not in your holdings.")
+
+
 async def cmd_addpair(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if not args:
@@ -578,6 +745,9 @@ def main():
     app.add_handler(CommandHandler("rate", cmd_rate))
     app.add_handler(CommandHandler("checkrates", cmd_checkrates))
     app.add_handler(CommandHandler("portfolio", cmd_portfolio))
+    app.add_handler(CommandHandler("holdings", cmd_holdings))
+    app.add_handler(CommandHandler("sethold", cmd_sethold))
+    app.add_handler(CommandHandler("removehold", cmd_removehold))
     app.add_handler(CommandHandler("history", cmd_history))
     app.add_handler(CommandHandler("recommend", cmd_recommend))
     app.add_handler(CommandHandler("addpair", cmd_addpair))
